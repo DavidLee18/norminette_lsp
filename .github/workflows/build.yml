@@ -11,8 +11,10 @@ env:
 
 jobs:
   build:
-
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: write
     steps:
@@ -29,6 +31,6 @@ jobs:
       with:
         artifacts: "./target/release/norminette_lsp"
         tag: ${{ steps.tag_version.outputs.new_tag }}
-        name: Release ${{ steps.tag_version.outputs.new_tag }}
+        name: Release ${{ steps.tag_version.outputs.new_tag }} - {{ matrix.os }}
         body: ${{ steps.tag_version.outputs.changelog }}
         
