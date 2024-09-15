@@ -19,7 +19,7 @@ jobs:
     - name: Build
       run: cargo build --verbose
     - name: Upload a Build Artifact
-    - uses: actions/upload-artifact@v3.2.1-node20
+      uses: actions/upload-artifact@v3.2.1-node20
       with:
         # Artifact name
         name: norminette_lsp
