@@ -23,5 +23,5 @@ jobs:
       with:
         # Artifact name
         name: norminette_lsp
-        path: release
+        path: target/release
         
