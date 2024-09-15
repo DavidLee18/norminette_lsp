@@ -31,6 +31,6 @@ jobs:
       with:
         artifacts: "./target/release/norminette_lsp"
         tag: ${{ steps.tag_version.outputs.new_tag }}
-        name: Release ${{ steps.tag_version.outputs.new_tag }} - {{ matrix.os }}
+        name: Release ${{ steps.tag_version.outputs.new_tag }} - ${{ matrix.os }}
         body: ${{ steps.tag_version.outputs.changelog }}
         
