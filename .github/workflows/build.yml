@@ -9,6 +9,8 @@ env:
 
 jobs:
   update_version:
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     outputs:
       new_tag: ${{ steps.tag_version.outputs.new_tag }}
