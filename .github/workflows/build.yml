@@ -48,7 +48,7 @@ jobs:
         name: aarch64-apple-darwin
         path: target/aarch64-apple-darwin/release/norminette_lsp
   release:
-    needs: [build_linux, build_macos]
+    needs: [update_version, build_linux, build_macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -66,7 +66,7 @@ jobs:
     - name: Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: ${{ jobs.update_version.outputs.new_tag }}
+        tag_name: ${{ needs.update_version.outputs.new_tag }}
         files: |
           x86_64-unknown-linux-gnu/norminette_lsp
           aarch64-apple-darwin/norminette_lsp
