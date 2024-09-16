@@ -36,28 +36,11 @@ jobs:
       run: echo "VERSION=${{ steps.tag_version.outputs.new_tag }}" >> $GITHUB_ENV
     - name: Build
       run: cargo build --release --target ${{ matrix.target }}
-    - name: Build archive
-      shell: bash
-      run: |
-        # Replace with the name of your binary
-        binary_name="norminette_lsp"
-
-        bin_name="$binary_name-${{ env.VERSION }}-${{ matrix.target }}"
-        mv "target/${{ matrix.target }}/release/$binary_name" "$bin_name"
-        echo "ASSET=$bin_name" >> $GITHUB_ENV
-
-    - name: Release
-      uses: softprops/action-gh-release@v1
+    - name: Upload binaries to release
+      uses: svenstaro/upload-release-action@v2
       with:
-        tag_name: ${{ steps.tag_version.outputs.new_tag }}
-        files: |
-          ${{ env.ASSET }}
-    # - name: Create a GitHub release
-    #   uses: ncipollo/release-action@v1
-    #   with:
-    #     artifacts: |
-    #         ${{ env.ASSET }}
-    #     tag: ${{ steps.tag_version.outputs.new_tag }}
-    #     name: Release ${{ steps.tag_version.outputs.new_tag }}
-    #     body: ${{ steps.tag_version.outputs.changelog }}
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: target/${{ matrix.target }}/release/norminette_lsp
+        asset_name: norminette_lsp-${{ matrix.target }}
+        tag: ${{ env.VERSION }}
         
