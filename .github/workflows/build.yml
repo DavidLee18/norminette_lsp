@@ -1,29 +1,17 @@
-name: Build
+name: Build and Release
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
     branches: [ "main" ]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - build: linux
-            os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-
-          - build: macos
-            os: macos-latest
-            target: aarch64-apple-darwin
-    runs-on: ${{ matrix.os }}
-    permissions:
-      contents: write
+  update_version:
+    runs-on: ubuntu-latest
+    outputs:
+      new_tag: ${{ steps.tag_version.outputs.new_tag }}
     steps:
     - uses: actions/checkout@v4
     - name: Bump version and push tag
@@ -31,16 +19,54 @@ jobs:
       uses: mathieudutour/github-tag-action@v6.2
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
-    - name: Get the release version from the tag
-      shell: bash
-      run: echo "VERSION=${{ steps.tag_version.outputs.new_tag }}" >> $GITHUB_ENV
+  build_linux:
+    needs: update_version
+    runs-on: ubuntu-latest
+    # permissions:
+    #   contents: write
+    steps:
+    - uses: actions/checkout@v4
     - name: Build
-      run: cargo build --release --target ${{ matrix.target }}
-    - name: Upload binaries to release
-      uses: svenstaro/upload-release-action@v2
+      run: cargo build --release --target x86_64-unknown-linux-gnu
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
       with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: target/${{ matrix.target }}/release/norminette_lsp
-        asset_name: norminette_lsp-${{ matrix.target }}
-        tag: ${{ env.VERSION }}
-        
+        name: x86_64-unknown-linux-gnu
+        path: target/x86_64-unknown-linux-gnu/release/norminette_lsp
+  build_macos:
+    needs: update_version
+    runs-on: macos-latest
+    # permissions:
+    #   contents: write
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build
+      run: cargo build --release --target aarch64-apple-darwin
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: aarch64-apple-darwin
+        path: target/aarch64-apple-darwin/release/norminette_lsp
+  release:
+    needs: [build_linux, build_macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Download Linux Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: x86_64-unknown-linux-gnu
+        path: x86_64-unknown-linux-gnu
+    - name: Download macOS Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: aarch64-apple-darwin
+        path: aarch64-apple-darwin
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ jobs.update_version.outputs.new_tag }}
+        files: |
+          x86_64-unknown-linux-gnu/norminette_lsp
+          aarch64-apple-darwin/norminette_lsp
