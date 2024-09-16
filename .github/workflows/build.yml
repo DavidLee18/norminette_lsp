@@ -13,24 +13,59 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - build: linux
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+
+          - build: macos
+            os: macos-latest
+            target: aarch64-apple-darwin
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
     steps:
     - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --release
     - name: Bump version and push tag
       id: tag_version
       uses: mathieudutour/github-tag-action@v6.2
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
-    - name: Create a GitHub release
-      uses: ncipollo/release-action@v1
+    - name: Get the release version from the tag
+      shell: bash
+      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
       with:
-        artifacts: "./target/release/norminette_lsp"
-        tag: ${{ steps.tag_version.outputs.new_tag }}
-        name: Release ${{ steps.tag_version.outputs.new_tag }} - ${{ matrix.os }}
-        body: ${{ steps.tag_version.outputs.changelog }}
+        # Make Rust compile to our target (defined in the matrix)
+        targets: ${{ matrix.target }}
+    - name: Build
+      uses: actions-rs/cargo@v1
+      with:
+        use-cross: true
+        command: build
+        args: --verbose --release --target ${{ matrix.target }}
+    - name: Build archive
+      shell: bash
+      run: |
+        # Replace with the name of your binary
+        binary_name="norminette_lsp"
+
+        dirname="$binary_name-${{ env.VERSION }}-${{ matrix.target }}"
+        mkdir "$dirname"
+        mv "target/${{ matrix.target }}/release/$binary_name" "$dirname"
+        tar -czf "$dirname.tar.gz" "$dirname"
+        echo "ASSET=$dirname.tar.gz" >> $GITHUB_ENV
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          ${{ env.ASSET }}
+    # - name: Create a GitHub release
+    #   uses: ncipollo/release-action@v1
+    #   with:
+    #     artifacts: "./target/release/norminette_lsp"
+    #     tag: ${{ steps.tag_version.outputs.new_tag }}
+    #     name: Release ${{ steps.tag_version.outputs.new_tag }} - ${{ matrix.os }}
+    #     body: ${{ steps.tag_version.outputs.changelog }}
         
