@@ -35,7 +35,7 @@ jobs:
       shell: bash
       run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
     - name: Build
-      run: cargo --release --target ${{ matrix.target }}
+      run: cargo build --release --target ${{ matrix.target }}
     - name: Build archive
       shell: bash
       run: |
