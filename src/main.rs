@@ -71,10 +71,17 @@ impl LanguageServer for Backend {
         Err(jsonrpc::Error::method_not_found())
     }
 
-    async fn did_open(&self, _: DidOpenTextDocumentParams) {
+    async fn did_open(&self, p: DidOpenTextDocumentParams) {
         self.client
             .log_message(MessageType::INFO, "file opened!")
             .await;
+        let diags = read_norminette(&Path::new(p.text_document.uri.as_str())).expect(&format!(
+            "norminette read failed of {}",
+            p.text_document.uri
+        ));
+        self.client
+            .publish_diagnostics(p.text_document.uri, diags, None)
+            .await
     }
 
     async fn did_change(&self, p: DidChangeTextDocumentParams) {
