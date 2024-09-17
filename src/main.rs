@@ -27,6 +27,13 @@ impl LanguageServer for Backend {
                 diagnostic_provider: Some(DiagnosticServerCapabilities::Options(
                     DiagnosticOptions::default(),
                 )),
+                workspace: Some(WorkspaceServerCapabilities {
+                    workspace_folders: Some(WorkspaceFoldersServerCapabilities {
+                        supported: Some(true),
+                        change_notifications: None,
+                    }),
+                    file_operations: None,
+                }),
                 ..Default::default()
             },
         })
@@ -78,10 +85,12 @@ impl LanguageServer for Backend {
 
     async fn did_save(&self, p: DidSaveTextDocumentParams) {
         self.client
-            .log_message(MessageType::INFO, "file saved!")
+            .log_message(MessageType::INFO, format!("file saved: {:?}", p.text))
             .await;
-        let diags = read_norminette(&Path::new(p.text_document.uri.as_str()))
-            .expect("norminette read failed");
+        let diags = read_norminette(&Path::new(p.text_document.uri.as_str())).expect(&format!(
+            "norminette read failed of {}",
+            p.text_document.uri
+        ));
         self.client
             .publish_diagnostics(p.text_document.uri, diags, None)
             .await
