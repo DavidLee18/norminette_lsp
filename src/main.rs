@@ -1,17 +1,92 @@
 pub mod norminette_msg;
 pub mod parser;
 
-use lsp_server::{Connection, ExtractError, Message, Request, RequestId, Response};
+use lsp_server::{Connection, ExtractError, Message, Notification, Request, RequestId, Response};
+use lsp_types::notification::{DidChangeTextDocument, DidOpenTextDocument, DidSaveTextDocument};
 use lsp_types::request::DocumentDiagnosticRequest;
 use lsp_types::{
-    Diagnostic, DiagnosticOptions, DiagnosticServerCapabilities, InitializeParams,
-    LogMessageParams, MessageType, PublishDiagnosticsParams, ServerCapabilities,
+    Diagnostic, DiagnosticOptions, DiagnosticServerCapabilities,
+    InitializeParams, LogMessageParams, MessageType, PublishDiagnosticsParams, ServerCapabilities,
     WorkDoneProgressOptions,
 };
 use parser::parse_norminette;
 use std::error::Error;
 use std::io;
 use std::path::Path;
+
+macro_rules! diag_on_event {
+    ($conn: expr, $noti: expr, $t: ident) => {
+        match cast_noti::<$t>($noti) {
+            Ok(params) => {
+                eprintln!("got doc document open notification: {params:?}");
+                notify_diagnostics!($conn, params);
+            }
+            Err(_) => {}
+        }
+    };
+}
+
+macro_rules! notify_diagnostics {
+    ($conn: expr, $params: expr) => {
+        match read_norminette(&Path::new($params.text_document.uri.path().as_str())) {
+            Ok(diags) => {
+                $conn.sender.send(Message::Notification(Notification {
+                    method: String::from("textDocument/publishDiagnostics"),
+                    params: serde_json::to_value(&PublishDiagnosticsParams {
+                        uri: $params.text_document.uri,
+                        diagnostics: diags,
+                        version: None,
+                    })?,
+                }))?;
+            }
+            Err(e) => {
+                $conn.sender.send(Message::Notification(Notification {
+                    method: String::from("window/logMessage"),
+                    params: serde_json::to_value(&LogMessageParams {
+                        typ: MessageType::ERROR,
+                        message: format!(
+                            "norminette read of {} failed: {}",
+                            $params.text_document.uri.path(),
+                            e
+                        ),
+                    })?,
+                }))?;
+            }
+        }
+    };
+}
+
+macro_rules! send_diagnostics {
+    ($conn: expr, $id: expr, $params: expr) => {
+        match read_norminette(&Path::new($params.text_document.uri.path().as_str())) {
+            Ok(diags) => {
+                $conn.sender.send(Message::Response(Response {
+                    id: $id,
+                    result: Some(serde_json::to_value(&PublishDiagnosticsParams {
+                        uri: $params.text_document.uri,
+                        diagnostics: diags,
+                        version: None,
+                    })?),
+                    error: None,
+                }))?;
+            }
+            Err(e) => {
+                $conn.sender.send(Message::Response(Response {
+                    id: $id,
+                    result: Some(serde_json::to_value(&LogMessageParams {
+                        typ: MessageType::ERROR,
+                        message: format!(
+                            "norminette read of {} failed: {}",
+                            $params.text_document.uri.path(),
+                            e
+                        ),
+                    })?),
+                    error: None,
+                }))?;
+            }
+        }
+    };
+}
 
 fn read_norminette(path: &Path) -> io::Result<Vec<Diagnostic>> {
     let output = std::process::Command::new("norminette")
@@ -83,38 +158,12 @@ fn main_loop(
                 match cast::<DocumentDiagnosticRequest>(req) {
                     Ok((id, params)) => {
                         eprintln!("got doc diagnostic request #{id} params: {params:?}");
-                        match read_norminette(&Path::new(params.text_document.uri.path().as_str()))
-                        {
-                            Ok(diags) => {
-                                connection.sender.send(Message::Response(Response {
-                                    id,
-                                    result: Some(serde_json::to_value(
-                                        &PublishDiagnosticsParams {
-                                            uri: params.text_document.uri,
-                                            diagnostics: diags,
-                                            version: None,
-                                        },
-                                    )?),
-                                    error: None,
-                                }))?;
-                            }
-                            Err(e) => {
-                                connection.sender.send(Message::Response(Response {
-                                    id,
-                                    result: Some(serde_json::to_value(&LogMessageParams {
-                                        typ: MessageType::ERROR,
-                                        message: format!(
-                                            "norminette read of {} failed: {}",
-                                            params.text_document.uri.path(),
-                                            e
-                                        ),
-                                    })?),
-                                    error: None,
-                                }))?;
-                            }
-                        }
+                        send_diagnostics!(connection, id, params);
                     }
-                    Err(e) => return Err(Box::new(e)),
+                    Err(e) => {
+                        eprintln!("got error: {e:?}");
+                        continue;
+                    }
                 };
             }
             Message::Response(resp) => {
@@ -122,6 +171,9 @@ fn main_loop(
             }
             Message::Notification(not) => {
                 eprintln!("got notification: {not:?}");
+                diag_on_event!(connection, not.clone(), DidOpenTextDocument);
+                diag_on_event!(connection, not.clone(), DidChangeTextDocument);
+                diag_on_event!(connection, not, DidSaveTextDocument);
             }
         }
     }
@@ -134,4 +186,12 @@ where
     R::Params: serde::de::DeserializeOwned,
 {
     req.extract(R::METHOD)
+}
+
+fn cast_noti<N>(noti: Notification) -> Result<N::Params, ExtractError<Notification>>
+where
+    N: lsp_types::notification::Notification,
+    N::Params: serde::de::DeserializeOwned,
+{
+    noti.extract(N::METHOD)
 }
