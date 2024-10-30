@@ -51,7 +51,7 @@ impl LanguageServer for Backend {
         self.client
             .log_message(MessageType::INFO, "file opened!")
             .await;
-        match read_norminette(&Path::new(p.text_document.uri.as_str())) {
+        match read_norminette(&Path::new(p.text_document.uri.path())) {
             Ok(diags) => {
                 self.client
                     .publish_diagnostics(p.text_document.uri, diags, None)
@@ -67,7 +67,7 @@ impl LanguageServer for Backend {
         self.client
             .log_message(MessageType::INFO, "file changed!")
             .await;
-        match read_norminette(&Path::new(p.text_document.uri.as_str())) {
+        match read_norminette(&Path::new(p.text_document.uri.path())) {
             Ok(diags) => {
                 self.client
                     .publish_diagnostics(p.text_document.uri, diags, None)
@@ -84,7 +84,7 @@ impl LanguageServer for Backend {
         self.client
             .log_message(MessageType::INFO, format!("file saved: {:?}", p.text))
             .await;
-        match read_norminette(&Path::new(p.text_document.uri.as_str())) {
+        match read_norminette(&Path::new(p.text_document.uri.path())) {
             Ok(diags) => {
                 self.client
                     .publish_diagnostics(p.text_document.uri, diags, None)
