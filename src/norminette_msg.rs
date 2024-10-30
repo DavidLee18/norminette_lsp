@@ -1,6 +1,6 @@
 use std::u32;
 
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
+use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 
 #[derive(Debug)]
 pub enum NorminetteMsg {
