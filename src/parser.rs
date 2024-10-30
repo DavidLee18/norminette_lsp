@@ -1,57 +1,36 @@
-use nom::{
-    branch::alt,
-    bytes::complete::tag,
-    character::complete::{anychar, i32, newline, none_of, space0},
-    combinator::eof,
-    multi::{many0, many1, many_m_n, many_till},
-    IResult, Parser,
-};
-
 use crate::norminette_msg::NorminetteMsg;
+use nom::bytes::complete::is_not;
+use nom::character::complete::{alpha1, one_of, space1};
+use nom::{branch::alt, bytes::complete::tag, character::complete::{i32, newline}, combinator::eof, multi::{many1, many_till}, IResult, Parser};
 
 pub fn parse_norminette(s: &str) -> IResult<&str, Vec<NorminetteMsg>> {
-    let (s, _) = many_m_n(0, 1, header)(s)?;
-    let (s, _) = many0(none_of("\n"))(s)?; // line of the form "filename: Error!" or "filename: OK!"
+    let (s, _file_name) = is_not(":")(s)?; // line of the form "filename: Error!" or "filename: OK!"
+    let (s, _) = tag(": ")(s)?;
+    let (s, ok_or_error): (&str, &str) = alt((tag("OK"), tag("Error")))(s)?;
+    let (s, _) = tag("!")(s)?;
     let (s, _) = newline(s)?;
-    many0(alt((location, invalid)))(s)
-}
 
-fn header(s: &str) -> IResult<&str, ()> {
-    let (s, _) = tag("Missing or invalid header")(s)?;
-    let (s, _) = many0(none_of("\n"))(s)?;
-    let (s, _) = newline(s)?;
-    Ok((s, ()))
-}
-
-fn invalid(s: &str) -> IResult<&str, NorminetteMsg> {
-    let (s, _) = many1(none_of(" "))(s)?;
-    let (s, _) = many0(anychar)(s)?;
-    Ok((
-        s,
-        NorminetteMsg::NoLocation {
-            message: format!("file{}", s),
-        },
-    ))
+    if ok_or_error == "OK" { Ok((s, vec![NorminetteMsg::Ok])) } else { many1(location)(s) }
 }
 
 fn location(s: &str) -> IResult<&str, NorminetteMsg> {
     let (s, _) = tag("Error:")(s)?;
-    let (s, _) = space0(s)?;
-    let (s, error_type) = many0(none_of("\n"))(s)?;
-    let (s, _) = space0(s)?;
-    let (s, _) = tag("(line: ")(s)?;
-    let (s, _) = space0(s)?;
+    let (s, _) = many1(space1)(s)?;
+    let (s, (error_type, _)): (&str, (Vec<&str>, char)) = many_till(alt((alpha1, tag("_"))), one_of(" \t"))(s)?;
+    let (s, _) = many1(space1)(s)?;
+    let (s, _) = tag("(line:")(s)?;
+    let (s, _) = many1(space1)(s)?;
     let (s, l) = i32(s)?;
     let (s, _) = tag(", col:")(s)?;
-    let (s, _) = space0(s)?;
+    let (s, _) = many1(space1)(s)?;
     let (s, c) = i32(s)?;
-    let (s, _) = tag("):\t")(s)?;
-    let (s, _) = space0(s)?;
-    let (s, (msg, _)) = many_till(anychar, alt((newline.map(|_| ""), eof)))(s)?;
+    let (s, _) = tag("):")(s)?;
+    let (s, _) = many1(space1)(s)?;
+    let (s, (msg, _)): (&str, (Vec<&str>, &str)) = many_till(alt((alpha1, space1)), alt((newline.map(|_| ""), eof)))(s)?;
 
     Ok((
         s,
-        NorminetteMsg::LineColumn {
+        NorminetteMsg::Error {
             error_type: error_type.into_iter().collect(),
             line: l,
             column: c,

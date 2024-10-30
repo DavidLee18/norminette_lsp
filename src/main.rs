@@ -3,11 +3,9 @@ pub mod parser;
 
 use std::io;
 use std::path::Path;
-use std::sync::Arc;
 
 use parser::parse_norminette;
 use serde_json::Value;
-use tokio::sync::Mutex;
 use tower_lsp::jsonrpc::{self, Result};
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
@@ -49,15 +47,74 @@ impl LanguageServer for Backend {
         Ok(())
     }
 
-    async fn did_change_workspace_folders(&self, _: DidChangeWorkspaceFoldersParams) {
+    async fn did_open(&self, p: DidOpenTextDocumentParams) {
         self.client
-            .log_message(MessageType::INFO, "workspace folders changed!")
+            .log_message(MessageType::INFO, "file opened!")
             .await;
+        match read_norminette(&Path::new(p.text_document.uri.as_str())) {
+            Ok(diags) => {
+                self.client
+                    .publish_diagnostics(p.text_document.uri, diags, None)
+                    .await;
+            }
+            Err(e) => {
+                self.client.log_message(MessageType::ERROR, format!("norminette read of {} failed: {}", p.text_document.uri, e)).await;
+            }
+        }
+    }
+
+    async fn did_change(&self, p: DidChangeTextDocumentParams) {
+        self.client
+            .log_message(MessageType::INFO, "file changed!")
+            .await;
+        match read_norminette(&Path::new(p.text_document.uri.as_str())) {
+            Ok(diags) => {
+                self.client
+                    .publish_diagnostics(p.text_document.uri, diags, None)
+                    .await;
+            }
+            Err(e) => {
+                self.client.log_message(MessageType::ERROR, format!("norminette read of {} failed: {}", p.text_document.uri, e)).await;
+            }
+        }
+
+    }
+
+    async fn did_save(&self, p: DidSaveTextDocumentParams) {
+        self.client
+            .log_message(MessageType::INFO, format!("file saved: {:?}", p.text))
+            .await;
+        match read_norminette(&Path::new(p.text_document.uri.as_str())) {
+            Ok(diags) => {
+                self.client
+                    .publish_diagnostics(p.text_document.uri, diags, None)
+                    .await;
+            },
+            Err(e) => {
+                self.client.log_message(MessageType::ERROR, format!("norminette read of {} failed: {}", p.text_document.uri, e)).await;
+            }
+        }
+    }
+
+    async fn did_close(&self, _: DidCloseTextDocumentParams) {
+        self.client
+            .log_message(MessageType::INFO, "file closed!")
+            .await;
+    }
+
+    async fn completion(&self, _: CompletionParams) -> Result<Option<CompletionResponse>> {
+        Err(jsonrpc::Error::method_not_found())
     }
 
     async fn did_change_configuration(&self, _: DidChangeConfigurationParams) {
         self.client
             .log_message(MessageType::INFO, "configuration changed!")
+            .await;
+    }
+
+    async fn did_change_workspace_folders(&self, _: DidChangeWorkspaceFoldersParams) {
+        self.client
+            .log_message(MessageType::INFO, "workspace folders changed!")
             .await;
     }
 
@@ -70,65 +127,21 @@ impl LanguageServer for Backend {
     async fn execute_command(&self, _: ExecuteCommandParams) -> Result<Option<Value>> {
         Err(jsonrpc::Error::method_not_found())
     }
-
-    async fn did_open(&self, p: DidOpenTextDocumentParams) {
-        self.client
-            .log_message(MessageType::INFO, "file opened!")
-            .await;
-        let diags = read_norminette(&Path::new(p.text_document.uri.as_str())).expect(&format!(
-            "norminette read failed of {}",
-            p.text_document.uri
-        ));
-        self.client
-            .publish_diagnostics(p.text_document.uri, diags, None)
-            .await
-    }
-
-    async fn did_change(&self, p: DidChangeTextDocumentParams) {
-        self.client
-            .log_message(MessageType::INFO, "file changed!")
-            .await;
-        let diags = read_norminette(&Path::new(p.text_document.uri.as_str())).expect(&format!(
-            "norminette read failed of {}",
-            p.text_document.uri
-        ));
-        self.client
-            .publish_diagnostics(p.text_document.uri, diags, None)
-            .await
-    }
-
-    async fn did_save(&self, p: DidSaveTextDocumentParams) {
-        self.client
-            .log_message(MessageType::INFO, format!("file saved: {:?}", p.text))
-            .await;
-        let diags = read_norminette(&Path::new(p.text_document.uri.as_str())).expect(&format!(
-            "norminette read failed of {}",
-            p.text_document.uri
-        ));
-        self.client
-            .publish_diagnostics(p.text_document.uri, diags, None)
-            .await
-    }
-
-    async fn did_close(&self, _: DidCloseTextDocumentParams) {
-        self.client
-            .log_message(MessageType::INFO, "file closed!")
-            .await;
-    }
-
-    async fn completion(&self, _: CompletionParams) -> Result<Option<CompletionResponse>> {
-        Err(jsonrpc::Error::method_not_found())
-    }
 }
 
 pub fn read_norminette(path: &Path) -> io::Result<Vec<Diagnostic>> {
     let output = std::process::Command::new("norminette")
         .arg(path)
         .output()?;
-    let (_, diags) = parse_norminette(&String::from_utf8(output.stdout).expect("not valid utf8"))
-        .unwrap_or_else(|err| panic!("norminette parse error: {}", err));
+    let (_, diags) = parse_norminette(&String::from_utf8(output.stdout).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?)
+        .map_err(|err| io::Error::new(io::ErrorKind::Other, format!("norminette parse error: {:?}", err)))?;
 
-    Ok(diags.into_iter().map(|d| d.to_diagnostic()).collect())
+    Ok(diags
+        .into_iter()
+        .map(|d| d.to_diagnostic())
+        .filter(|o| o.is_some())
+        .map(|o| o.unwrap())
+        .collect())
 }
 
 #[tokio::main]
