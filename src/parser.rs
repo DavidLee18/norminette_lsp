@@ -1,6 +1,6 @@
 use crate::norminette_msg::NorminetteMsg;
 use nom::bytes::complete::is_not;
-use nom::character::complete::{alpha1, one_of, space1};
+use nom::character::complete::{alpha1, anychar, one_of, space1};
 use nom::{branch::alt, bytes::complete::tag, character::complete::{i32, newline}, combinator::eof, multi::{many1, many_till}, IResult, Parser};
 
 pub fn parse_norminette(s: &str) -> IResult<&str, Vec<NorminetteMsg>> {
@@ -26,7 +26,7 @@ fn location(s: &str) -> IResult<&str, NorminetteMsg> {
     let (s, c) = i32(s)?;
     let (s, _) = tag("):")(s)?;
     let (s, _) = many1(space1)(s)?;
-    let (s, (msg, _)): (&str, (Vec<&str>, &str)) = many_till(alt((alpha1, space1)), alt((newline.map(|_| ""), eof)))(s)?;
+    let (s, (msg, _)): (&str, (Vec<char>, &str)) = many_till(anychar, alt((newline.map(|_| ""), eof)))(s)?;
 
     Ok((
         s,
