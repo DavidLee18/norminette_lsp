@@ -17,8 +17,8 @@ impl NorminetteMsg {
     pub fn find_range(&self) -> Option<Range> {
         match self {
             NorminetteMsg::Error { line, column, .. } => Some(Range {
-                start: Position::new(*line as u32, *column as u32),
-                end: Position::new(*line as u32, (column + 3) as u32),
+                start: Position::new((line - 1) as u32, (column - 1) as u32),
+                end: Position::new((line - 1) as u32, (column + 2) as u32),
             }),
             NorminetteMsg::Ok => None,
         }
