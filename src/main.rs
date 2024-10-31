@@ -11,15 +11,41 @@ use lsp_types::{
     TextDocumentSyncSaveOptions, WorkDoneProgressOptions,
 };
 use parser::parse_norminette;
+use serde::Deserialize;
 use std::error::Error;
-use std::io;
 use std::path::Path;
+use std::{io, process};
+
+#[derive(Deserialize)]
+pub struct InitOptions {
+    pub path: String,
+    pub name: String,
+    pub email: String,
+}
 
 macro_rules! diag_on_event {
     ($conn: expr, $noti: expr, $t: ident, $f: expr) => {
         match cast_noti::<$t>($noti) {
             Ok(params) => {
-                eprintln!("got doc document open notification: {params:?}");
+                eprintln!("got document notification: {params:?}");
+                notify_diagnostics!($conn, &params, $f);
+            }
+            Err(_) => {}
+        }
+    };
+    ($conn: expr, $noti: expr, $t: ident, $f: expr, $option: expr) => {
+        match cast_noti::<$t>($noti) {
+            Ok(params) => {
+                eprintln!("got document notification: {params:?}");
+                if let Ok(ref op) = $option {
+                    let output = process::Command::new(&op.path)
+                    .args(["--name", &op.name, "--email", &op.email])
+                    .output()
+                    .map_err(|e| format!("failed to execute {}: {e:?}", op.path))?;
+                    if !output.status.success() {
+                        eprintln!("{}", String::from_utf8(output.stderr).unwrap());
+                    }
+                }
                 notify_diagnostics!($conn, &params, $f);
             }
             Err(_) => {}
@@ -78,7 +104,7 @@ macro_rules! send_diagnostics {
 }
 
 fn read_norminette(path: &Path, text: Option<String>) -> io::Result<Vec<Diagnostic>> {
-    let mut cmd = std::process::Command::new("norminette");
+    let mut cmd = process::Command::new("norminette");
     match text {
         Some(text) => {
             cmd.args(["--cfile", &text, "--filename", path.to_str().unwrap()]);
@@ -150,7 +176,11 @@ fn main_loop(
     connection: Connection,
     params: serde_json::Value,
 ) -> Result<(), Box<dyn Error + Sync + Send>> {
-    let _params: InitializeParams = serde_json::from_value(params)?;
+    let params: InitializeParams = serde_json::from_value(params)?;
+    let options = params
+        .initialization_options
+        .ok_or_else(|| "missing initialization options".to_string())
+        .and_then(|o| InitOptions::deserialize(&o).map_err(|e| format!("deserialization failed: {e:?}")));
 
     for msg in &connection.receiver {
         eprintln!("got msg: {msg:?}");
@@ -189,7 +219,8 @@ fn main_loop(
                     Some(|p: &DidSaveTextDocumentParams| p
                         .text
                         .clone()
-                        .expect("includeText set to true yet text was None"))
+                        .expect("includeText set to true yet text was None")),
+                    options
                 );
             }
         }
