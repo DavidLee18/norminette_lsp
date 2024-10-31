@@ -40,7 +40,14 @@ macro_rules! diag_on_event {
                 match $option {
                     Ok(Ok(ref op)) => {
                         let output = process::Command::new(&op.path)
-                            .args(["--name", &op.name, "--email", &op.email])
+                            .args([
+                                "--name",
+                                &op.name,
+                                "--email",
+                                &op.email,
+                                "--path",
+                                params.text_document.uri.path().as_str(),
+                            ])
                             .output()
                             .map_err(|e| format!("failed to execute {}: {e:?}", op.path))?;
                         if !output.status.success() {
@@ -48,7 +55,7 @@ macro_rules! diag_on_event {
                         }
                     }
                     Err(ref e) => eprintln!("{e}"),
-                    Ok(Err(ref e)) => eprintln!("{e}")
+                    Ok(Err(ref e)) => eprintln!("{e}"),
                 }
                 notify_diagnostics!($conn, &params, $f);
             }
