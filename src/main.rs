@@ -21,6 +21,7 @@ pub struct InitOptions {
     pub path: String,
     pub name: String,
     pub email: String,
+    pub offset: Option<i32>,
 }
 
 macro_rules! diag_on_event {
@@ -47,6 +48,8 @@ macro_rules! diag_on_event {
                                 &op.email,
                                 "--path",
                                 params.text_document.uri.path().as_str(),
+                                "--offset",
+                                &format!("{}", op.offset.unwrap_or(0)),
                             ])
                             .output()
                             .map_err(|e| format!("failed to execute {}: {e:?}", op.path))?;
