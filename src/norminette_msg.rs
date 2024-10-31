@@ -10,29 +10,28 @@ pub enum NorminetteMsg {
         column: i32,
         message: String,
     },
-    Ok
+    Ok,
 }
 
 impl NorminetteMsg {
     pub fn find_range(&self) -> Option<Range> {
         match self {
-            NorminetteMsg::Error {
-                error_type: _,
-                line,
-                column,
-                message: _,
-            } => Some(Range {
+            NorminetteMsg::Error { line, column, .. } => Some(Range {
                 start: Position::new((line - 1) as u32, *column as u32),
-                end: Position::new(*line as u32, u32::MAX),
+                end: Position::new(*line as u32, (column + 1) as u32),
             }),
-            NorminetteMsg::Ok => None
+            NorminetteMsg::Ok => None,
         }
     }
 
     pub fn to_diagnostic(self) -> Option<Diagnostic> {
         let range = self.find_range()?;
         match self {
-            NorminetteMsg::Error { error_type, message, .. } => Some(Diagnostic {
+            NorminetteMsg::Error {
+                error_type,
+                message,
+                ..
+            } => Some(Diagnostic {
                 range,
                 severity: Some(DiagnosticSeverity::ERROR),
                 code: Some(NumberOrString::String(error_type)),
@@ -43,7 +42,7 @@ impl NorminetteMsg {
                 tags: None,
                 data: None,
             }),
-            NorminetteMsg::Ok => None
+            NorminetteMsg::Ok => None,
         }
     }
 }

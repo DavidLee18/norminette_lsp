@@ -2,12 +2,13 @@ pub mod norminette_msg;
 pub mod parser;
 
 use lsp_server::{Connection, ExtractError, Message, Notification, Request, RequestId, Response};
-use lsp_types::notification::{DidChangeTextDocument, DidOpenTextDocument, DidSaveTextDocument};
+use lsp_types::notification::{DidOpenTextDocument, DidSaveTextDocument};
 use lsp_types::request::DocumentDiagnosticRequest;
 use lsp_types::{
-    Diagnostic, DiagnosticOptions, DiagnosticServerCapabilities,
-    InitializeParams, LogMessageParams, MessageType, PublishDiagnosticsParams, ServerCapabilities,
-    WorkDoneProgressOptions,
+    Diagnostic, DiagnosticOptions, DiagnosticServerCapabilities, DidOpenTextDocumentParams,
+    DidSaveTextDocumentParams, InitializeParams, PublishDiagnosticsParams, SaveOptions,
+    ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncOptions,
+    TextDocumentSyncSaveOptions, WorkDoneProgressOptions,
 };
 use parser::parse_norminette;
 use std::error::Error;
@@ -15,11 +16,11 @@ use std::io;
 use std::path::Path;
 
 macro_rules! diag_on_event {
-    ($conn: expr, $noti: expr, $t: ident) => {
+    ($conn: expr, $noti: expr, $t: ident, $f: expr) => {
         match cast_noti::<$t>($noti) {
             Ok(params) => {
                 eprintln!("got doc document open notification: {params:?}");
-                notify_diagnostics!($conn, params);
+                notify_diagnostics!($conn, &params, $f);
             }
             Err(_) => {}
         }
@@ -27,30 +28,25 @@ macro_rules! diag_on_event {
 }
 
 macro_rules! notify_diagnostics {
-    ($conn: expr, $params: expr) => {
-        match read_norminette(&Path::new($params.text_document.uri.path().as_str())) {
+    ($conn: expr, $params: expr, $f: expr) => {
+        let text = $f.map(|f_| f_($params));
+        match read_norminette(&Path::new($params.text_document.uri.path().as_str()), text) {
             Ok(diags) => {
                 $conn.sender.send(Message::Notification(Notification {
                     method: String::from("textDocument/publishDiagnostics"),
                     params: serde_json::to_value(&PublishDiagnosticsParams {
-                        uri: $params.text_document.uri,
+                        uri: $params.text_document.uri.clone(),
                         diagnostics: diags,
                         version: None,
                     })?,
                 }))?;
             }
             Err(e) => {
-                $conn.sender.send(Message::Notification(Notification {
-                    method: String::from("window/logMessage"),
-                    params: serde_json::to_value(&LogMessageParams {
-                        typ: MessageType::ERROR,
-                        message: format!(
-                            "norminette read of {} failed: {}",
-                            $params.text_document.uri.path(),
-                            e
-                        ),
-                    })?,
-                }))?;
+                eprintln!(
+                    "norminette read of {} failed: {}",
+                    $params.text_document.uri.path(),
+                    e
+                );
             }
         }
     };
@@ -58,7 +54,7 @@ macro_rules! notify_diagnostics {
 
 macro_rules! send_diagnostics {
     ($conn: expr, $id: expr, $params: expr) => {
-        match read_norminette(&Path::new($params.text_document.uri.path().as_str())) {
+        match read_norminette(&Path::new($params.text_document.uri.path().as_str()), None) {
             Ok(diags) => {
                 $conn.sender.send(Message::Response(Response {
                     id: $id,
@@ -71,29 +67,28 @@ macro_rules! send_diagnostics {
                 }))?;
             }
             Err(e) => {
-                $conn.sender.send(Message::Response(Response {
-                    id: $id,
-                    result: Some(serde_json::to_value(&LogMessageParams {
-                        typ: MessageType::ERROR,
-                        message: format!(
-                            "norminette read of {} failed: {}",
-                            $params.text_document.uri.path(),
-                            e
-                        ),
-                    })?),
-                    error: None,
-                }))?;
+                eprintln!(
+                    "norminette read of {} failed: {}",
+                    $params.text_document.uri.path(),
+                    e
+                );
             }
         }
     };
 }
 
-fn read_norminette(path: &Path) -> io::Result<Vec<Diagnostic>> {
-    let output = std::process::Command::new("norminette")
-        .arg(path)
-        .output()?;
+fn read_norminette(path: &Path, text: Option<String>) -> io::Result<Vec<Diagnostic>> {
+    let mut cmd = std::process::Command::new("norminette");
+    match text {
+        Some(text) => {
+            cmd.args(["--cfile", &text, "--filename", path.to_str().unwrap()]);
+        }
+        None => {
+            cmd.arg(path);
+        }
+    }
     let (_, diags) = parse_norminette(
-        &String::from_utf8(output.stdout)
+        &String::from_utf8(cmd.output()?.stdout)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
     )
     .map_err(|err| {
@@ -123,6 +118,16 @@ fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
             workspace_diagnostics: false,
             work_done_progress_options: WorkDoneProgressOptions::default(),
         })),
+        text_document_sync: Some(TextDocumentSyncCapability::Options(
+            TextDocumentSyncOptions {
+                open_close: Some(true),
+                change: None,
+                save: Some(TextDocumentSyncSaveOptions::SaveOptions(SaveOptions {
+                    include_text: Some(true),
+                })),
+                ..Default::default()
+            },
+        )),
         ..Default::default()
     })?;
     let initialization_params = match connection.initialize(server_capabilities) {
@@ -171,9 +176,21 @@ fn main_loop(
             }
             Message::Notification(not) => {
                 eprintln!("got notification: {not:?}");
-                diag_on_event!(connection, not.clone(), DidOpenTextDocument);
-                diag_on_event!(connection, not.clone(), DidChangeTextDocument);
-                diag_on_event!(connection, not, DidSaveTextDocument);
+                diag_on_event!(
+                    connection,
+                    not.clone(),
+                    DidOpenTextDocument,
+                    Some(|p: &DidOpenTextDocumentParams| p.text_document.text.clone())
+                );
+                diag_on_event!(
+                    connection,
+                    not,
+                    DidSaveTextDocument,
+                    Some(|p: &DidSaveTextDocumentParams| p
+                        .text
+                        .clone()
+                        .expect("includeText set to true yet text was None"))
+                );
             }
         }
     }
