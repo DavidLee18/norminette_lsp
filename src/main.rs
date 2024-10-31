@@ -37,14 +37,18 @@ macro_rules! diag_on_event {
         match cast_noti::<$t>($noti) {
             Ok(params) => {
                 eprintln!("got document notification: {params:?}");
-                if let Ok(ref op) = $option {
-                    let output = process::Command::new(&op.path)
-                    .args(["--name", &op.name, "--email", &op.email])
-                    .output()
-                    .map_err(|e| format!("failed to execute {}: {e:?}", op.path))?;
-                    if !output.status.success() {
-                        eprintln!("{}", String::from_utf8(output.stderr).unwrap());
+                match $option {
+                    Ok(Ok(ref op)) => {
+                        let output = process::Command::new(&op.path)
+                            .args(["--name", &op.name, "--email", &op.email])
+                            .output()
+                            .map_err(|e| format!("failed to execute {}: {e:?}", op.path))?;
+                        if !output.status.success() {
+                            eprintln!("{}", String::from_utf8(output.stderr).unwrap());
+                        }
                     }
+                    Err(ref e) => eprintln!("{e}"),
+                    Ok(Err(ref e)) => eprintln!("{e}")
                 }
                 notify_diagnostics!($conn, &params, $f);
             }
@@ -180,7 +184,9 @@ fn main_loop(
     let options = params
         .initialization_options
         .ok_or_else(|| "missing initialization options".to_string())
-        .and_then(|o| InitOptions::deserialize(&o).map_err(|e| format!("deserialization failed: {e:?}")));
+        .map(|o| {
+            InitOptions::deserialize(&o).map_err(|e| format!("deserialization failed: {e:?}"))
+        });
 
     for msg in &connection.receiver {
         eprintln!("got msg: {msg:?}");
