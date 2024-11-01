@@ -39,7 +39,7 @@ macro_rules! diag_on_event {
             Ok(params) => {
                 eprintln!("got document notification: {params:?}");
                 match $option {
-                    Ok(Ok(ref op)) => {
+                    Ok(Ok(ref op)) if is_valid_ext(params.text_document.uri.path().to_string().split(".").last().unwrap()) => {
                         let output = process::Command::new(&op.path)
                             .args([
                                 "--name",
@@ -56,7 +56,8 @@ macro_rules! diag_on_event {
                         if !output.status.success() {
                             eprintln!("{}", String::from_utf8(output.stderr).unwrap());
                         }
-                    }
+                    },
+                    Ok(Ok(_)) => {},
                     Err(ref e) => eprintln!("{e}"),
                     Ok(Err(ref e)) => eprintln!("{e}"),
                 }
@@ -116,6 +117,8 @@ macro_rules! send_diagnostics {
         }
     };
 }
+
+fn is_valid_ext(s: &str) -> bool { s == "c" || s == "h" }
 
 fn read_norminette(path: &Path, text: Option<String>) -> io::Result<Vec<Diagnostic>> {
     let mut cmd = process::Command::new("norminette");
