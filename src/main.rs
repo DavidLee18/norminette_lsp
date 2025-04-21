@@ -132,7 +132,7 @@ fn read_norminette(path: &Path, text: Option<String>) -> io::Result<Vec<Diagnost
         None => {
             cmd.arg(path);
         }
-        _ => panic!("file is neither a C file nor a header file"),
+        _ => (),
     }
     let (_, diags) = parse_norminette(
         &String::from_utf8(cmd.output()?.stdout)
