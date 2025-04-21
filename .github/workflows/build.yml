@@ -23,7 +23,7 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
   build_linux:
     needs: update_version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     # permissions:
     #   contents: write
     steps:
