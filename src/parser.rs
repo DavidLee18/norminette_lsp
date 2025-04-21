@@ -31,13 +31,13 @@ fn location(s: &str) -> IResult<&str, NorminetteMsg> {
     Ok((
         s,
         match kind {
-            "Error" => NorminetteMsg::Error {
+            "Error:" => NorminetteMsg::Error {
                 error_type: error_type.into_iter().collect(),
                 line: l,
                 column: c,
                 message: msg.into_iter().collect(),
             },
-            "Notice" => NorminetteMsg::Notice {
+            "Notice:" => NorminetteMsg::Notice {
                 error_type: error_type.into_iter().collect(),
                 line: l,
                 column: c,
