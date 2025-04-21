@@ -123,12 +123,16 @@ fn is_valid_ext(s: &str) -> bool { s == "c" || s == "h" }
 fn read_norminette(path: &Path, text: Option<String>) -> io::Result<Vec<Diagnostic>> {
     let mut cmd = process::Command::new("norminette");
     match text {
-        Some(text) => {
+        Some(text) if path.to_str().unwrap().split('.').last().unwrap() == "c" => {
             cmd.args(["--cfile", &text, "--filename", path.to_str().unwrap()]);
+        }
+        Some(text) if path.to_str().unwrap().split('.').last().unwrap() == "h" => {
+            cmd.args(["--hfile", &text, "--filename", path.to_str().unwrap()]);
         }
         None => {
             cmd.arg(path);
         }
+        _ => panic!("file is neither a C file nor a header file"),
     }
     let (_, diags) = parse_norminette(
         &String::from_utf8(cmd.output()?.stdout)

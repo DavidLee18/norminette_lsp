@@ -14,7 +14,7 @@ pub fn parse_norminette(s: &str) -> IResult<&str, Vec<NorminetteMsg>> {
 }
 
 fn location(s: &str) -> IResult<&str, NorminetteMsg> {
-    let (s, _) = tag("Error:")(s)?;
+    let (s, kind) = alt((tag("Error:"), tag("Notice:")))(s)?;
     let (s, _) = many1(space1)(s)?;
     let (s, (error_type, _)): (&str, (Vec<&str>, char)) = many_till(alt((alpha1, tag("_"))), one_of(" \t"))(s)?;
     let (s, _) = many1(space1)(s)?;
@@ -30,11 +30,20 @@ fn location(s: &str) -> IResult<&str, NorminetteMsg> {
 
     Ok((
         s,
-        NorminetteMsg::Error {
-            error_type: error_type.into_iter().collect(),
-            line: l,
-            column: c,
-            message: msg.into_iter().collect(),
+        match kind {
+            "Error" => NorminetteMsg::Error {
+                error_type: error_type.into_iter().collect(),
+                line: l,
+                column: c,
+                message: msg.into_iter().collect(),
+            },
+            "Notice" => NorminetteMsg::Notice {
+                error_type: error_type.into_iter().collect(),
+                line: l,
+                column: c,
+                message: msg.into_iter().collect(),
+            },
+            _ => panic!("Unknown kind: {}", kind),
         },
     ))
 }
