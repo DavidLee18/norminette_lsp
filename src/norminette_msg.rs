@@ -58,7 +58,7 @@ impl NorminetteMsg {
                 ..
             } => Some(Diagnostic {
                 range,
-                severity: Some(DiagnosticSeverity::INFORMATION),
+                severity: Some(DiagnosticSeverity::WARNING),
                 code: Some(NumberOrString::String(error_type)),
                 code_description: None,
                 source: Some("norminette".to_string()),
